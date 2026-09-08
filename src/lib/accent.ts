@@ -9,6 +9,9 @@ const COURSE_COLORS: Record<string, { hsl: string; text: string; bg: string; bgS
   amber:   { hsl: '#fbbf24', text: 'text-amber-300',     bg: 'bg-amber-400/10',   bgSoft: 'bg-amber-400/10',   border: 'border-amber-400/30',   progress: 'from-amber-300 to-amber-400',   glow: 'shadow-[0_0_20px_-4px_rgba(251,191,36,0.4)]', swatch: '#fbbf24' },
   slate:   { hsl: '#94a3b8', text: 'text-slate-400',     bg: 'bg-slate-500/10',   bgSoft: 'bg-slate-500/10',   border: 'border-slate-500/30',   progress: 'from-slate-400 to-slate-500',   glow: 'shadow-[0_0_20px_-4px_rgba(148,163,184,0.4)]', swatch: '#94a3b8' },
   violet:  { hsl: '#a78bfa', text: 'text-violet-400',    bg: 'bg-violet-500/10',  bgSoft: 'bg-violet-500/10',  border: 'border-violet-500/30',  progress: 'from-violet-400 to-violet-500',  glow: 'shadow-[0_0_20px_-4px_rgba(167,139,250,0.4)]', swatch: '#a78bfa' },
+  primary:   { hsl: '#ffc880', text: 'text-primary',         bg: 'bg-primary/10',        bgSoft: 'bg-primary/10',        border: 'border-primary/30',     progress: 'from-primary/80 to-primary',        glow: 'shadow-[0_0_20px_-4px_rgba(255,200,128,0.4)]', swatch: '#ffc880' },
+  secondary: { hsl: '#b4b7ff', text: 'text-secondary',       bg: 'bg-secondary/10',      bgSoft: 'bg-secondary/10',      border: 'border-secondary/30',   progress: 'from-secondary/80 to-secondary',    glow: 'shadow-[0_0_20px_-4px_rgba(180,183,255,0.4)]', swatch: '#b4b7ff' },
+  tertiary:  { hsl: '#5beaad', text: 'text-tertiary',        bg: 'bg-tertiary/10',       bgSoft: 'bg-tertiary/10',       border: 'border-tertiary/30',    progress: 'from-tertiary/80 to-tertiary',      glow: 'shadow-[0_0_20px_-4px_rgba(91,234,173,0.4)]', swatch: '#5beaad' },
 };
 
 /** Return raw hex for inline styles (used by accent swatches). */

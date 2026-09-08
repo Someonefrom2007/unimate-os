@@ -2,9 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   supabase
 } from '@/lib/supabase';
-import {
-  useTaskStore
-} from '@/core/store/useTaskStore';
 import type {
   AppNotification,
   Assessment,
@@ -77,14 +74,14 @@ function App() {
   const [actionError, setActionError] = useState('');
 
   const [courses, setCourses] = useState<Course[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks] = useState<Task[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [schedule, setSchedule] = useState<ScheduleEntry[]>([]);
-  const [habits, setHabits] = useState<Habit[]>([]);
+  const [habits, setHabits] = useState<Habit[]>([]); // eslint-disable-line @typescript-eslint/no-unused-vars
   const [notes, setNotes] = useState<Note[]>([]);
-  const [thoughts, setThoughts] = useState<QuickThought[]>([]);
+  const [, setThoughts] = useState<QuickThought[]>([]);
   const [grades, setGrades] = useState<GradeEntry[]>([]);
-  const [sessions, setSessions] = useState<FocusSession[]>([]);
+  const [sessions, setSessions] = useState<FocusSession[]>([]); // eslint-disable-line @typescript-eslint/no-unused-vars
   const [goals, setGoals] = useState<Goal[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -151,36 +148,6 @@ function App() {
 
   const handleMutationError = useCallback((message: string) => setActionError(message), []);
 
-  const handleToggleTask = useCallback(async (id: string, completed: boolean) => {
-    // Update the shared task mirror so Dashboard keeps working.
-    setTasks((previous) => previous.map((task) => task.id === id ? { ...task, completed } : task));
-    // Persist through the domain store (IndexedDB) — the Tasks view reads the same store.
-    const current = useTaskStore.getState();
-    const target = current.data.find((t) => t.id === id);
-    if (target) {
-      try {
-        await current.upsert({ ...target, completed });
-      } catch {
-        handleMutationError('That task could not be updated.');
-      }
-    }
-  }, [handleMutationError]);
-
-  const handleToggleThought = useCallback(async (id: string, completed: boolean) => {
-    setThoughts((previous) => previous.map((thought) => thought.id === id ? { ...thought, completed } : thought));
-    const { error } = await supabase.from('quick_thoughts').update({ completed }).eq('id', id);
-    if (error) handleMutationError('That thought could not be updated.');
-  }, [handleMutationError]);
-
-  const handleAddThought = useCallback(async (text: string) => {
-    const { data, error } = await supabase.from('quick_thoughts').insert({ text, sort_order: thoughts.length }).select().maybeSingle();
-    if (error || !data) {
-      handleMutationError('The thought could not be saved.');
-      return;
-    }
-    setThoughts((previous) => [...previous, data as QuickThought]);
-  }, [handleMutationError, thoughts.length]);
-
   const openCreate = useCallback((kind: CreateKind) => {
     setCreateKind(kind);
     setQuickAddOpen(true);
@@ -221,7 +188,7 @@ function App() {
     if (loading) return <div className="flex h-[60vh] items-center justify-center"><div className="flex flex-col items-center gap-3"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" /><p className="font-label-mono-sm text-on-surface-variant/60">Loading your workspace…</p></div></div>;
     if (loadError) return <div className="glass-card rounded-xl p-8 text-center"><p className="font-body-lg text-error">{loadError}</p><button onClick={() => void loadAll()} className="mt-4 rounded-lg bg-primary px-4 py-2 font-body-md font-semibold text-surface">Retry</button></div>;
     switch (activeView) {
-      case 'dashboard': return <DashboardView courses={courses} tasks={tasks} assessments={assessments} schedule={schedule} habits={habits} notes={notes} thoughts={thoughts} profile={profile} grades={grades} sessions={sessions} onToggleTask={handleToggleTask} onToggleThought={handleToggleThought} onAddThought={handleAddThought} onNavigate={setActiveView} />;
+      case 'dashboard': return <DashboardView onNavigate={setActiveView} />;
       case 'courses': return <CoursesView />;
       case 'schedule': return <ScheduleView entries={schedule} />;
       case 'tasks': return <TasksView />;
@@ -232,9 +199,9 @@ function App() {
       case 'focus': return <FocusView />;
       case 'goals': return <GoalsView onCreate={() => openCreate('goal')} />;
       case 'habits': return <HabitsView />;
-      case 'workload': return <WorkloadView tasks={tasks} courses={courses} assessments={assessments} />;
-      case 'insights': return <InsightsView tasks={tasks} courses={courses} assessments={assessments} sessions={sessions} habits={habits} goals={goals} />;
-      case 'ai-assistant': return <AIAssistantView tasks={tasks} courses={courses} assessments={assessments} sessions={sessions} />;
+      case 'workload': return <WorkloadView />;
+      case 'insights': return <InsightsView />;
+      case 'ai-assistant': return <AIAssistantView />;
       case 'profile': return <ProfileView profile={profile} courses={courses} grades={grades} onCreateProfile={handleCreateProfile} />;
       case 'settings': return <SettingsView />;
       case 'plans': return <PlansView />;

@@ -79,7 +79,6 @@ describe('nextStreakIfCompleted', () => {
   });
 
   it('starts new streak if yesterday missed', () => {
-    const today = new Date('2025-12-15');
     const history = ['2025-12-13'];
     expect(nextStreakIfCompleted(history, new Date('2025-12-15'))).toBe(1);
   });

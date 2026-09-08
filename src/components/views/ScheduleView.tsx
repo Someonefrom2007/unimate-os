@@ -2,14 +2,15 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Video, Users, FlaskConical, Coffee, BookOpen, Award,
   ChevronLeft, ChevronRight, CalendarDays, Clock, MapPin,
-  Plus, Trash2, X, Pencil,
+  Plus, Trash2, Pencil,
 } from 'lucide-react';
-import type { ScheduleEntry } from '@/lib/types';
+import type { ScheduleEntry, AccentColor as UiAccent } from '@/lib/types';
 import { useScheduleStore } from '@/core/store/useScheduleStore';
+import { useCourseStore } from '@/core/store/useCourseStore';
 import { toUiScheduleEntry, fromUiScheduleEntry } from './scheduleUiAdapter';
+import { AddEditEventModal } from './AddEditEventModal';
 import type { CalendarEvent } from '@/core/domain/model/CalendarEvent';
-import { WeekDay } from '@/core/domain/enums';
-import { createId } from '@/core/domain/ids';
+import { accentHex } from '@/lib/accent';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -28,16 +29,6 @@ type AccentColorKey = 'primary' | 'secondary' | 'tertiary';
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-const ACCENT_OPTIONS: { key: AccentColorKey; label: string; dot: string }[] = [
-  { key: 'primary', label: 'Blue', dot: 'bg-primary' },
-  { key: 'secondary', label: 'Teal', dot: 'bg-secondary' },
-  { key: 'tertiary', label: 'Purple', dot: 'bg-tertiary' },
-];
-
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
 function getSessionIcon(type: string) {
   switch (type.toLowerCase()) {
     case 'lecture':   return BookOpen;
@@ -50,16 +41,28 @@ function getSessionIcon(type: string) {
   }
 }
 
-function sessionAccent(type: string, accentKey: AccentColorKey = 'primary') {
-  const base = {
-    primary:   { ring: 'ring-primary/30',   bg: 'bg-primary/8',  text: 'text-primary',     pill: 'bg-primary/15 text-primary/80',      dot: 'bg-primary',     borderL: 'border-l-primary' },
-    secondary: { ring: 'ring-secondary/30', bg: 'bg-secondary/8', text: 'text-secondary',   pill: 'bg-secondary/15 text-secondary/80',  dot: 'bg-secondary',   borderL: 'border-l-secondary' },
-    tertiary:  { ring: 'ring-tertiary/30',  bg: 'bg-tertiary/8', text: 'text-tertiary',    pill: 'bg-tertiary/15 text-tertiary/80',    dot: 'bg-tertiary',    borderL: 'border-l-tertiary' },
-  }[accentKey];
-  switch (type.toLowerCase()) {
-    case 'practical': case 'lab': return { ...base, ring: 'ring-tertiary/30', bg: 'bg-tertiary/8', text: 'text-tertiary', pill: 'bg-tertiary/15 text-tertiary/80', dot: 'bg-tertiary', borderL: 'border-l-tertiary' };
-    default: return base;
+/** Resolve an event's accent to a tailwind-compatible key, mapping the full course palette onto the 3 brand accents for static classes. */
+function extractAccentKey(_entry: ScheduleEntry, courseAccent?: UiAccent): AccentColorKey {
+  if (courseAccent && courseAccent !== 'primary' && courseAccent !== 'secondary' && courseAccent !== 'tertiary') {
+    // New palette colors (gold/emerald/cyan/rose/indigo/amber/slate/violet) fall back
+    // to a vivid brand key so text/bg classes stay static; the exact hex is applied inline.
+    return 'secondary';
   }
+  if (courseAccent) return courseAccent;
+  switch (_entry.session_type?.toLowerCase()) {
+    case 'seminar': return 'secondary';
+    case 'practical': case 'lab': return 'tertiary';
+    default: return 'primary';
+  }
+}
+
+/** Resolve dynamic hex (new palette) or undefined (legacy brand colors → static classes). */
+function resolveAccentHex(entry: ScheduleEntry, courseAccent?: UiAccent): string | undefined {
+  if (courseAccent && courseAccent !== 'primary' && courseAccent !== 'secondary' && courseAccent !== 'tertiary') {
+    return accentHex(courseAccent);
+  }
+  void entry;
+  return undefined;
 }
 
 function parseStartHour(timeLabel: string): number | null {
@@ -89,14 +92,6 @@ function parseEndTime(timeLabel: string): number | null {
   if (timeLabel.toLowerCase().includes('pm') && h < 12) h += 12;
   if (timeLabel.toLowerCase().includes('am') && h === 12) h = 0;
   return h + 1;
-}
-
-function extractAccentKey(_entry: ScheduleEntry): AccentColorKey {
-  switch (_entry.session_type?.toLowerCase()) {
-    case 'seminar': return 'secondary';
-    case 'practical': case 'lab': return 'tertiary';
-    default: return 'primary';
-  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -132,42 +127,54 @@ function SegmentedMode({ mode, onChange }: { mode: ViewMode; onChange: (m: ViewM
 /*  Event Card — Glass polished with vertical accent border            */
 /* ------------------------------------------------------------------ */
 
-function EventCard({ entry, positionStyle, accentKey, compact, onEdit, onDelete }: {
-  entry: ScheduleEntry; positionStyle?: React.CSSProperties; accentKey: AccentColorKey; compact?: boolean; onEdit: () => void; onDelete: () => void;
+function EventCard({ entry, positionStyle, accentKey, accentHexOverride, compact, onEdit, onDelete }: {
+  entry: ScheduleEntry; positionStyle?: React.CSSProperties; accentKey: AccentColorKey; accentHexOverride?: string; compact?: boolean; onEdit: () => void; onDelete: () => void;
 }) {
-  const ac = sessionAccent(entry.session_type, accentKey);
   const Icon = getSessionIcon(entry.session_type);
+  const hex = accentHexOverride || (accentKey === 'primary' ? '#ffc880' : accentKey === 'secondary' ? '#b4b7ff' : '#5beaad');
 
-  const card = (
+  return (
     <div
-      className={`group relative rounded-xl border-l-[3px] ${ac.borderL} bg-neutral-900/60 backdrop-blur-md border border-neutral-800/80 p-3 transition-all duration-200 hover:bg-neutral-900/80 hover:shadow-lg hover:shadow-black/20 ${compact ? '' : 'w-full'}`}
-      style={positionStyle}
+      className={`group relative overflow-hidden rounded-xl bg-neutral-900/60 backdrop-blur-md border border-neutral-800/80 transition-all duration-200 hover:bg-neutral-900/80 hover:shadow-lg hover:shadow-black/20 ${compact ? '' : 'w-full'}`}
+      style={{ ...positionStyle }}
     >
-      <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-        <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="rounded-md bg-white/10 p-1 text-on-surface-variant/60 hover:bg-white/20 hover:text-on-background" aria-label="Edit event"><Pencil className="h-3 w-3" /></button>
-        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="rounded-md bg-white/10 p-1 text-on-surface-variant/60 hover:bg-error/20 hover:text-error" aria-label="Delete event"><Trash2 className="h-3 w-3" /></button>
-      </div>
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/5">
-          <Icon className="h-4 w-4 text-on-surface-variant" strokeWidth={2} />
+      {/* Left vertical accent bar */}
+      <span className="absolute left-0 top-0 h-full w-1.5 rounded-full" style={{ backgroundColor: hex, boxShadow: `0 0 12px ${hex}55` }} />
+      <div className="pl-4 pr-2 py-2.5">
+        <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="rounded-md bg-white/10 p-1 text-on-surface-variant/60 hover:bg-white/20 hover:text-on-background" aria-label="Edit event"><Pencil className="h-3 w-3" /></button>
+          <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="rounded-md bg-white/10 p-1 text-on-surface-variant/60 hover:bg-error/20 hover:text-error" aria-label="Delete event"><Trash2 className="h-3 w-3" /></button>
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="font-body-md text-[13px] font-semibold text-on-background">{entry.course_name}</p>
-          {entry.room && <div className="mt-0.5 flex items-center gap-1 text-on-surface-variant/50"><MapPin className="h-3 w-3" /><span className="font-label-mono-xs">{entry.room}</span></div>}
-          <div className="mt-1 flex items-center gap-1 text-on-surface-variant/50"><Clock className="h-3 w-3" /><span className="font-label-mono-xs">{entry.time_label}</span></div>
-          <span className={`mt-1.5 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${ac.pill}`}>{entry.session_type}</span>
+        <div className="flex items-start gap-2.5 pr-12">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${hex}16` }}>
+            <Icon className="h-4 w-4" style={{ color: hex }} strokeWidth={2} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-body-md text-[13px] font-semibold text-on-background">{entry.course_name}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              {entry.room && <span className="flex items-center gap-1 font-label-mono-xs text-on-surface-variant/50"><MapPin className="h-3 w-3" />{entry.room}</span>}
+              <span className="flex items-center gap-1 font-label-mono-xs text-on-surface-variant/50"><Clock className="h-3 w-3" />{entry.time_label}</span>
+            </div>
+            {!compact && (
+              <span
+                className="mt-1.5 inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                style={{ backgroundColor: `${hex}22`, color: hex }}
+              >
+                {entry.session_type}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
-  return card;
 }
 
 /* ------------------------------------------------------------------ */
 /*  Day View                                                           */
 /* ------------------------------------------------------------------ */
 
-function DayView({ entries, todayDate, onEdit, onDelete, onAddEvent }: { entries: ScheduleEntry[]; todayDate: Date; onEdit: (e: ScheduleEntry) => void; onDelete: (e: ScheduleEntry) => void; onAddEvent: () => void }) {
+function DayView({ entries, todayDate, courseAccentMap, onEdit, onDelete, onAddEvent }: { entries: ScheduleEntry[]; todayDate: Date; courseAccentMap: Map<string, UiAccent>; onEdit: (e: ScheduleEntry) => void; onDelete: (e: ScheduleEntry) => void; onAddEvent: () => void }) {
   const hours = Array.from({ length: 13 }, (_, i) => i + 8);
   const positioned = useMemo(() => {
     return entries.map((e) => {
@@ -182,7 +189,7 @@ function DayView({ entries, todayDate, onEdit, onDelete, onAddEvent }: { entries
 
   return (
     <div className="rounded-2xl border border-neutral-800/80 bg-neutral-900/60 backdrop-blur-md p-6">
-      <div className="flex items-center gap-3 mb-5">
+      <div className="mb-5 flex items-center gap-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10"><CalendarDays className="h-4 w-4 text-primary" /></div>
         <div>
           <p className="font-headline-md text-[15px] font-semibold text-on-background">{todayDate.toLocaleDateString('en', { weekday: 'long' })}</p>
@@ -191,15 +198,28 @@ function DayView({ entries, todayDate, onEdit, onDelete, onAddEvent }: { entries
         {positioned.length > 0 && <span className="ml-auto rounded-full bg-primary/12 px-3 py-1 font-label-mono-xs text-primary/80">{positioned.length} event{positioned.length !== 1 ? 's' : ''}</span>}
         <button onClick={onAddEvent} className="ml-2 flex items-center gap-1 rounded-lg bg-gradient-to-r from-primary to-primary-container px-3 py-1.5 font-label-mono-xs font-semibold text-surface transition-transform hover:scale-[1.02]"><Plus className="h-3 w-3" strokeWidth={2.5} /> Add</button>
       </div>
-      <div className="relative h-[600px]">
+      <div className="relative h-[600px] overflow-hidden rounded-xl border border-neutral-800/60">
         {hours.map((h) => (
-          <div key={h} className="absolute left-0 right-0 border-t border-neutral-800/60" style={{ top: `${((h - 8) / 13) * 100}%` }}>
-            <span className="absolute -top-3 left-0 font-label-mono-xs text-on-surface-variant/40">{h === 12 ? '12 PM' : h > 12 ? `${h - 12} PM` : `${h} AM`}</span>
+          <div key={h} className="absolute left-0 right-0 border-t border-neutral-800/50 transition-colors hover:bg-white/[0.02]" style={{ top: `${((h - 8) / 13) * 100}%` }}>
+            <span className="absolute -top-2 left-2 rounded bg-neutral-900/80 px-1 font-label-mono-xs text-on-surface-variant/50 backdrop-blur-sm">
+              {h === 12 ? '12:00 PM' : h > 12 ? `${String(h - 12).padStart(2, '0')}:00 PM` : `${String(h).padStart(2, '0')}:00 AM`}
+            </span>
           </div>
         ))}
-        {positioned.map((entry) => (
-          <EventCard key={entry.id} entry={entry} accentKey={extractAccentKey(entry)} positionStyle={{ position: 'absolute', top: `${entry.top}%`, height: `${entry.height}%`, left: 48, right: 0, zIndex: 1 }} onEdit={() => onEdit(entry)} onDelete={() => onDelete(entry)} />
-        ))}
+        {positioned.map((entry) => {
+          const courseAccent = courseAccentMap.get(entry.course_name);
+          return (
+            <EventCard
+              key={entry.id}
+              entry={entry}
+              accentKey={extractAccentKey(entry, courseAccent)}
+              accentHexOverride={resolveAccentHex(entry, courseAccent)}
+              positionStyle={{ position: 'absolute', top: `${entry.top}%`, height: `${entry.height}%`, left: 48, right: 0, zIndex: 1 }}
+              onEdit={() => onEdit(entry)}
+              onDelete={() => onDelete(entry)}
+            />
+          );
+        })}
         {positioned.length === 0 && <div className="flex h-full items-center justify-center"><p className="font-label-mono-sm text-on-surface-variant/30">No events scheduled</p></div>}
       </div>
     </div>
@@ -210,7 +230,7 @@ function DayView({ entries, todayDate, onEdit, onDelete, onAddEvent }: { entries
 /*  Week View                                                          */
 /* ------------------------------------------------------------------ */
 
-function WeekView({ entries, weekStart, onEdit, onDelete, onAddEvent }: { entries: ScheduleEntry[]; weekStart: Date; onEdit: (e: ScheduleEntry) => void; onDelete: (e: ScheduleEntry) => void; onAddEvent: () => void }) {
+function WeekView({ entries, weekStart, courseAccentMap, onEdit, onDelete, onAddEvent }: { entries: ScheduleEntry[]; weekStart: Date; courseAccentMap: Map<string, UiAccent>; onEdit: (e: ScheduleEntry) => void; onDelete: (e: ScheduleEntry) => void; onAddEvent: () => void }) {
   const days = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(weekStart);
@@ -227,19 +247,34 @@ function WeekView({ entries, weekStart, onEdit, onDelete, onAddEvent }: { entrie
         <button onClick={onAddEvent} className="flex items-center gap-1 rounded-lg bg-gradient-to-r from-primary to-primary-container px-3 py-1.5 font-label-mono-xs font-semibold text-surface transition-transform hover:scale-[1.02]"><Plus className="h-3 w-3" strokeWidth={2.5} /> Add</button>
       </div>
       <div className="grid grid-cols-7 gap-2">
-        {days.map((day) => (
-          <div key={day.name} className="min-h-[120px]">
-            <div className={`mb-2 rounded-lg px-2 py-1 text-center ${day.date.toDateString() === new Date().toDateString() ? 'bg-primary/15 text-primary' : 'bg-white/3 text-on-surface-variant/60'}`}>
-              <p className="font-label-mono-xs font-bold">{day.date.toLocaleDateString('en', { weekday: 'short' })}</p>
-              <p className="font-headline-sm text-[16px] font-bold">{day.date.getDate()}</p>
+        {days.map((day) => {
+          const isToday = day.date.toDateString() === new Date().toDateString();
+          return (
+            <div key={day.name} className="min-h-[140px] rounded-xl border border-neutral-800/60 bg-neutral-900/40 p-1.5 transition-colors hover:bg-neutral-900/60">
+              <div className={`mb-1.5 rounded-lg px-2 py-1 text-center ${isToday ? 'bg-primary/15 text-primary' : 'bg-white/3 text-on-surface-variant/60'}`}>
+                <p className="font-label-mono-xs font-bold">{day.date.toLocaleDateString('en', { weekday: 'short' })}</p>
+                <p className="font-headline-sm text-[15px] font-bold">{day.date.getDate()}</p>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {day.entries.map((entry) => {
+                  const courseAccent = courseAccentMap.get(entry.course_name);
+                  return (
+                    <EventCard
+                      key={entry.id}
+                      entry={entry}
+                      accentKey={extractAccentKey(entry, courseAccent)}
+                      accentHexOverride={resolveAccentHex(entry, courseAccent)}
+                      compact
+                      onEdit={() => onEdit(entry)}
+                      onDelete={() => onDelete(entry)}
+                    />
+                  );
+                })}
+                {day.entries.length === 0 && <p className="py-3 text-center font-label-mono-xs text-on-surface-variant/25">—</p>}
+              </div>
             </div>
-            <div className="flex flex-col gap-1.5">
-              {day.entries.map((entry) => (
-                <EventCard key={entry.id} entry={entry} accentKey={extractAccentKey(entry)} compact onEdit={() => onEdit(entry)} onDelete={() => onDelete(entry)} />
-              ))}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -249,7 +284,7 @@ function WeekView({ entries, weekStart, onEdit, onDelete, onAddEvent }: { entrie
 /*  Month View                                                         */
 /* ------------------------------------------------------------------ */
 
-function MonthView({ entries, year, month, onEdit, onDelete }: { entries: ScheduleEntry[]; year: number; month: number; onEdit: (e: ScheduleEntry) => void; onDelete: (e: ScheduleEntry) => void }) {
+function MonthView({ entries, year, month, courseAccentMap, onEdit, onDelete }: { entries: ScheduleEntry[]; year: number; month: number; courseAccentMap: Map<string, UiAccent>; onEdit: (e: ScheduleEntry) => void; onDelete: (e: ScheduleEntry) => void }) {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
   const startDayOfWeek = (firstDay.getDay() + 6) % 7;
@@ -279,15 +314,21 @@ function MonthView({ entries, year, month, onEdit, onDelete }: { entries: Schedu
         {cells.map((cell) => {
           const isToday = cell.date === todayStr;
           return (
-            <div key={cell.date} className={`min-h-[72px] rounded-xl border p-1.5 transition-all ${isToday ? 'border-primary/30 bg-primary/5' : cell.isCurrentMonth ? 'border-neutral-800/60 bg-neutral-900/40 hover:bg-neutral-900/60' : 'border-transparent bg-transparent opacity-30'}`}>
+            <div key={cell.date} className={`min-h-[76px] rounded-xl border p-1.5 transition-all ${isToday ? 'border-primary/40 bg-primary/5 shadow-[0_0_16px_-6px_rgba(255,200,128,0.4)]' : cell.isCurrentMonth ? 'border-neutral-800/60 bg-neutral-900/40 hover:border-neutral-700/80 hover:bg-neutral-900/60' : 'border-transparent bg-transparent opacity-30'}`}>
               <p className={`mb-1 text-right font-label-mono-xs font-bold ${isToday ? 'text-primary' : 'text-on-surface-variant/60'}`}>{cell.day}</p>
-              <div className="flex flex-col gap-0.5">
+              <div className="flex flex-col gap-1">
                 {cell.entries.slice(0, 2).map((e) => {
-                  const ac = sessionAccent(e.session_type, extractAccentKey(e));
+                  const courseAccent = courseAccentMap.get(e.course_name);
+                  const hex = resolveAccentHex(e, courseAccent) || (extractAccentKey(e, courseAccent) === 'primary' ? '#ffc880' : extractAccentKey(e, courseAccent) === 'secondary' ? '#b4b7ff' : '#5beaad');
                   return (
-                    <div key={e.id} className="group/ev relative cursor-pointer rounded px-1 py-0.5 border-l-2 border-l-current" onClick={() => onEdit(e)}>
-                      <div className={`h-1.5 w-full rounded-full ${ac.dot}`} />
-                      <p className="font-label-mono-xs text-[8px] text-on-surface-variant/60 truncate">{e.course_name}</p>
+                    <div
+                      key={e.id}
+                      className="group/ev relative cursor-pointer truncate rounded-full px-2 py-0.5 font-label-mono-xs text-[9px] font-medium transition-opacity hover:opacity-80"
+                      style={{ backgroundColor: `${hex}1f`, color: hex }}
+                      onClick={() => onEdit(e)}
+                    >
+                      <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: hex }} />
+                      {e.course_name}
                       <button onClick={(ev) => { ev.stopPropagation(); onDelete(e); }} className="absolute -right-0.5 -top-0.5 hidden rounded bg-white/10 p-0.5 text-error/60 hover:text-error group-hover/ev:block"><Trash2 className="h-2 w-2" /></button>
                     </div>
                   );
@@ -304,78 +345,6 @@ function MonthView({ entries, year, month, onEdit, onDelete }: { entries: Schedu
 
 /* ------------------------------------------------------------------ */
 /*  Create / Edit Modal                                                */
-/* ------------------------------------------------------------------ */
-
-function EventModal({ mode, initial, onCancel, onConfirm }: {
-  mode: 'create' | 'edit';
-  initial: Partial<CalendarEvent> & { courseName: string; timeLabel: string; room: string; sessionType: string; dayLabel: string };
-  onCancel: () => void;
-  onConfirm: (event: CalendarEvent) => void;
-}) {
-  const [courseName, setCourseName] = useState(initial.courseName);
-  const [room, setRoom] = useState(initial.room);
-  const [timeLabel, setTimeLabel] = useState(initial.timeLabel);
-  const [sessionType, setSessionType] = useState(initial.sessionType || 'lecture');
-  const [dayLabel, setDayLabel] = useState(initial.dayLabel || DAY_NAMES[0]);
-  const [accentKey, setAccentKey] = useState<AccentColorKey>(extractAccentKey(initial as unknown as ScheduleEntry));
-  const [localError, setLocalError] = useState('');
-
-  const submit = () => {
-    if (!courseName.trim()) { setLocalError('Course name is required.'); return; }
-    if (!timeLabel.trim()) { setLocalError('Time is required.'); return; }
-    const dayOfWeek = DAY_NAMES.indexOf(dayLabel) as WeekDay;
-    onConfirm({
-      id: initial.id || createId(), courseId: null, courseName: courseName.trim(), dayOfWeek: dayOfWeek as WeekDay, dayLabel,
-      dateLabel: new Date().toLocaleDateString('en', { year: 'numeric', month: 'long', day: 'numeric' }),
-      isToday: dayOfWeek === new Date().getDay() - 1, timeLabel: timeLabel.trim(), room: room.trim(), sessionType, isNext: false, sortOrder: 0,
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCancel}>
-      <div className="w-full max-w-md rounded-3xl border border-neutral-800/80 bg-neutral-900/80 backdrop-blur-md p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="font-headline-md text-[16px] font-semibold text-on-background">{mode === 'create' ? 'Add Event' : 'Edit Event'}</h3>
-          <button onClick={onCancel} className="rounded-lg p-1.5 text-on-surface-variant/60 hover:bg-white/5"><X className="h-4 w-4" /></button>
-        </div>
-        <div className="space-y-3">
-          <div><label className="mb-1 block font-label-mono-xs text-on-surface-variant/60">Course Name</label><input value={courseName} onChange={(e) => setCourseName(e.target.value)} placeholder="e.g. Advanced Algorithms" className="w-full rounded-lg border border-white/10 bg-surface-container/60 px-3 py-2.5 font-body-md text-[13px] text-on-background placeholder:text-on-surface-variant/40 focus:border-primary/40 focus:outline-none" autoFocus /></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block font-label-mono-xs text-on-surface-variant/60">Day</label><select value={dayLabel} onChange={(e) => setDayLabel(e.target.value)} className="w-full rounded-lg border border-white/10 bg-surface-container/60 px-3 py-2.5 font-body-md text-[13px] text-on-background focus:border-primary/40 focus:outline-none">{DAY_NAMES.map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
-            <div><label className="mb-1 block font-label-mono-xs text-on-surface-variant/60">Time</label><input value={timeLabel} onChange={(e) => setTimeLabel(e.target.value)} placeholder="e.g. 09:00 - 10:30" className="w-full rounded-lg border border-white/10 bg-surface-container/60 px-3 py-2.5 font-body-md text-[13px] text-on-background placeholder:text-on-surface-variant/40 focus:border-primary/40 focus:outline-none" /></div>
-          </div>
-          <div><label className="mb-1 block font-label-mono-xs text-on-surface-variant/60">Room</label><input value={room} onChange={(e) => setRoom(e.target.value)} placeholder="e.g. Turing 301" className="w-full rounded-lg border border-white/10 bg-surface-container/60 px-3 py-2.5 font-body-md text-[13px] text-on-background placeholder:text-on-surface-variant/40 focus:border-primary/40 focus:outline-none" /></div>
-          <div>
-            <label className="mb-1 block font-label-mono-xs text-on-surface-variant/60">Session Type</label>
-            <div className="flex gap-2">
-              {['lecture', 'seminar', 'lab', 'graded'].map((t) => (
-                <button key={t} onClick={() => setSessionType(t)} className={`flex-1 rounded-lg border px-2 py-2 font-label-mono-sm text-[11px] font-semibold transition-all ${sessionType === t ? 'border-primary/40 bg-primary/10 text-primary' : 'border-white/8 bg-surface-container/40 text-on-surface-variant/50 hover:text-on-background'}`}>
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block font-label-mono-xs text-on-surface-variant/60">Accent Color</label>
-            <div className="flex gap-3">
-              {ACCENT_OPTIONS.map((opt) => (
-                <button key={opt.key} onClick={() => setAccentKey(opt.key)} className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-all ${accentKey === opt.key ? 'border-primary/40 bg-primary/10' : 'border-white/8 bg-surface-container/40 hover:bg-white/5'}`}>
-                  <span className={`h-3 w-3 rounded-full ${opt.dot}`} /><span className="font-label-mono-xs text-on-surface-variant/70">{opt.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          {localError && <p className="flex items-center gap-1 rounded-lg border border-error/20 bg-error/10 px-3 py-2 font-label-mono-xs text-error">{localError}</p>}
-        </div>
-        <div className="mt-5 flex gap-2">
-          <button onClick={onCancel} className="flex-1 rounded-lg border border-white/10 bg-white/4 px-4 py-2.5 font-body-md text-[13px] text-on-surface-variant transition-colors hover:bg-white/8">Cancel</button>
-          <button onClick={submit} className="flex-1 rounded-lg bg-gradient-to-r from-primary to-primary-container px-4 py-2.5 font-body-md text-[13px] font-semibold text-surface transition-transform hover:scale-[1.02]">{mode === 'create' ? 'Add Event' : 'Save Changes'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function DeleteConfirmModal({ name, onCancel, onConfirm }: { name: string; onCancel: () => void; onConfirm: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCancel}>
@@ -401,6 +370,7 @@ function DeleteConfirmModal({ name, onCancel, onConfirm }: { name: string; onCan
 export function ScheduleView({ entries: propEntries }: ScheduleViewProps) {
   const now = useMemo(() => new Date(), []);
   const { data, loading, error, initialized, load, upsert, remove } = useScheduleStore();
+  const { data: courseData } = useCourseStore();
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [weekOffset, setWeekOffset] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
@@ -415,6 +385,13 @@ export function ScheduleView({ entries: propEntries }: ScheduleViewProps) {
     if (propEntries && propEntries.length > 0) return propEntries;
     return [];
   }, [data, propEntries]);
+
+  /** Map of course name → course accent, so schedule blocks inherit course colors. */
+  const courseAccentMap = useMemo(() => {
+    const map = new Map<string, UiAccent>();
+    for (const c of courseData) map.set(c.name, c.accent as UiAccent);
+    return map;
+  }, [courseData]);
 
   const weekStart = useMemo(() => { const d = new Date(now); d.setDate(d.getDate() + weekOffset * 7); const day = d.getDay(); const diff = (day === 0 ? -6 : 1) - day; d.setDate(d.getDate() + diff); d.setHours(0, 0, 0, 0); return d; }, [now, weekOffset]);
   const weekEnd = useMemo(() => { const d = new Date(weekStart); d.setDate(weekStart.getDate() + 6); return d; }, [weekStart]);
@@ -461,11 +438,27 @@ export function ScheduleView({ entries: propEntries }: ScheduleViewProps) {
           <Plus className="h-4 w-4" strokeWidth={2.5} /> Add Event
         </button>
       </div>
-      {viewMode === 'day' && <DayView entries={dayEntries} todayDate={now} onEdit={(e) => setEditing(e)} onDelete={(e) => setConfirmDelete(e)} onAddEvent={() => setShowCreate(true)} />}
-      {viewMode === 'week' && <WeekView entries={entries} weekStart={weekStart} onEdit={(e) => setEditing(e)} onDelete={(e) => setConfirmDelete(e)} onAddEvent={() => setShowCreate(true)} />}
-      {viewMode === 'month' && <MonthView entries={entries} year={currentMonth.getFullYear()} month={currentMonth.getMonth()} onEdit={(e) => setEditing(e)} onDelete={(e) => setConfirmDelete(e)} />}
-      {showCreate && <EventModal mode="create" initial={{ courseName: '', timeLabel: '', room: '', sessionType: 'lecture', dayLabel: DAY_NAMES[now.getDay() === 0 ? 6 : now.getDay() - 1] }} onCancel={() => setShowCreate(false)} onConfirm={handleCreate} />}
-      {editing && <EventModal mode="edit" initial={{ id: editing.id, courseName: editing.course_name, timeLabel: editing.time_label, room: editing.room, sessionType: editing.session_type, dayLabel: editing.day_label }} onCancel={() => setEditing(null)} onConfirm={handleUpdate} />}
+      {viewMode === 'day' && <DayView entries={dayEntries} todayDate={now} courseAccentMap={courseAccentMap} onEdit={(e) => setEditing(e)} onDelete={(e) => setConfirmDelete(e)} onAddEvent={() => setShowCreate(true)} />}
+      {viewMode === 'week' && <WeekView entries={entries} weekStart={weekStart} courseAccentMap={courseAccentMap} onEdit={(e) => setEditing(e)} onDelete={(e) => setConfirmDelete(e)} onAddEvent={() => setShowCreate(true)} />}
+      {viewMode === 'month' && <MonthView entries={entries} year={currentMonth.getFullYear()} month={currentMonth.getMonth()} courseAccentMap={courseAccentMap} onEdit={(e) => setEditing(e)} onDelete={(e) => setConfirmDelete(e)} />}
+      {showCreate && (
+        <AddEditEventModal
+          mode="create"
+          initial={{ courseName: '', timeLabel: '', room: '', sessionType: 'lecture', dayLabel: '' }}
+          courses={courseData}
+          onCancel={() => setShowCreate(false)}
+          onConfirm={handleCreate}
+        />
+      )}
+      {editing && (
+        <AddEditEventModal
+          mode="edit"
+          initial={{ id: editing.id, courseName: editing.course_name, timeLabel: editing.time_label, room: editing.room, sessionType: editing.session_type, dayLabel: editing.day_label, dateLabel: editing.date_label }}
+          courses={courseData}
+          onCancel={() => setEditing(null)}
+          onConfirm={handleUpdate}
+        />
+      )}
       {confirmDelete && <DeleteConfirmModal name={confirmDelete.course_name} onCancel={() => setConfirmDelete(null)} onConfirm={() => void handleDelete(confirmDelete)} />}
     </div>
   );

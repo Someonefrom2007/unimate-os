@@ -1,5 +1,4 @@
 import type { Goal } from '@/core/domain/model/Goal';
-import type { AccentColor as UiAccent } from '@/lib/types';
 
 /** Legacy snake_case UI shape for the Goals view. */
 export interface UiGoal {

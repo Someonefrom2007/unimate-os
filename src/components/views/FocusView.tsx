@@ -117,7 +117,7 @@ export function FocusView() {
       setMode('focus');
       setSecondsLeft(pending.focus * 60);
     }
-  }, [running, secondsLeft, upsert]);
+  }, [running, secondsLeft, upsert, buildSession]);
 
   const handlePresetChange = useCallback((idx: number) => {
     setPresetIdx(idx);
@@ -142,7 +142,7 @@ export function FocusView() {
     setRunning(false);
     setMode('focus');
     setSecondsLeft(preset.focus * 60);
-  }, [mode, secondsLeft, totalSeconds, upsert]);
+  }, [mode, secondsLeft, totalSeconds, preset.focus, upsert, buildSession]);
 
   const minutes = Math.floor(secondsLeft / 60);
   const seconds = secondsLeft % 60;

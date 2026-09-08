@@ -3,7 +3,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  STEP_COUNT,
   currentOnboardingStep,
   deriveInitials,
   mergeProfileUpdates,

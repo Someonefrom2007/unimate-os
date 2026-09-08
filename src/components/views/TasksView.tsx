@@ -3,6 +3,7 @@ import {
   Clock3, Check, Plus, Trash2, X, AlertTriangle,
 } from 'lucide-react';
 import { useTaskStore } from '@/core/store/useTaskStore';
+import { useCourseStore } from '@/core/store/useCourseStore';
 import type { Task as DomainTask } from '@/core/domain/model/Task';
 import { TaskPriority, TaskStatus } from '@/core/domain/enums';
 import { createId } from '@/core/domain/ids';
@@ -13,6 +14,8 @@ import {
 } from '@/core/engines/taskEngine';
 import type { UiTask } from './taskUiAdapter';
 import { toUiTask, fromUiTask } from './taskUiAdapter';
+import { accentHex } from '@/lib/accent';
+import type { AccentColor as UiAccent } from '@/lib/types';
 
 const priorityConfig = {
   high: { color: 'text-error', bg: 'bg-error/10', border: 'border-error/20', label: 'URGENT', pill: 'bg-error/15 text-error/80' },
@@ -24,13 +27,14 @@ type FilterKind = 'all' | 'active' | 'completed' | TaskPriority;
 
 /** Column definitions for the Kanban board. */
 const KANBAN_COLUMNS: { key: TaskStatus; label: string; accent: string; dot: string }[] = [
-  { key: TaskStatus.Pending, label: 'TODO', accent: 'bg-neutral-900/40 border-neutral-800/60', dot: 'bg-on-surface-variant/40' },
-  { key: TaskStatus.InProgress, label: 'IN PROGRESS', accent: 'bg-neutral-900/40 border-primary/30', dot: 'bg-primary' },
-  { key: TaskStatus.Completed, label: 'DONE', accent: 'bg-neutral-900/40 border-tertiary/30', dot: 'bg-tertiary' },
+  { key: TaskStatus.Pending, label: 'TODO', accent: 'bg-neutral-900/40 border border-neutral-800/60 hover:border-neutral-700/80', dot: 'bg-on-surface-variant/40' },
+  { key: TaskStatus.InProgress, label: 'IN PROGRESS', accent: 'bg-neutral-900/40 border border-primary/25 hover:border-primary/40', dot: 'bg-primary' },
+  { key: TaskStatus.Completed, label: 'DONE', accent: 'bg-neutral-900/40 border border-tertiary/25 hover:border-tertiary/40', dot: 'bg-tertiary' },
 ];
 
 export function TasksView() {
   const { data, loading, error, initialized, load, upsert, remove } = useTaskStore();
+  const { data: courseData } = useCourseStore();
   const [actionError, setActionError] = useState('');
   const [filter, setFilter] = useState<FilterKind>('all');
   const [courseFilter, setCourseFilter] = useState('all');
@@ -60,6 +64,13 @@ export function TasksView() {
     const codes = new Set(data.map((t) => t.courseCode).filter(Boolean));
     return [...codes].sort();
   }, [data]);
+
+  /** Map of course code → course accent, so task tags inherit course colors. */
+  const courseAccentMap = useMemo(() => {
+    const map = new Map<string, UiAccent>();
+    for (const c of courseData) map.set(c.code, c.accent as UiAccent);
+    return map;
+  }, [courseData]);
 
   const activeCount = data.filter((t) => !t.completed).length;
   const doneCount = data.filter((t) => t.completed).length;
@@ -226,7 +237,7 @@ export function TasksView() {
         {columns.map((col) => (
           <div
             key={col.key}
-            className={`rounded-2xl border p-4 ${col.accent}`}
+            className={`rounded-2xl p-4 backdrop-blur-md transition-all duration-200 ${col.accent}`}
           >
             <div className="mb-3 flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
@@ -244,6 +255,7 @@ export function TasksView() {
                 <TaskCard
                   key={task.id}
                   task={task}
+                  courseAccent={courseAccentMap.get(task.course_code)}
                   onMove={(status) => void handleMove(task, status)}
                   onToggleComplete={() => void toggleComplete(task)}
                   onEdit={() => setEditing(task)}
@@ -297,12 +309,14 @@ export function TasksView() {
 
 function TaskCard({
   task,
+  courseAccent,
   onMove,
   onToggleComplete,
   onEdit,
   onDelete,
 }: {
   task: UiTask;
+  courseAccent?: UiAccent;
   onMove: (status: TaskStatus) => void;
   onToggleComplete: () => void;
   onEdit: () => void;
@@ -312,6 +326,9 @@ function TaskCard({
   const subtask = parseSubtaskProgress(task.subtask_summary);
   const pct = subtask.percent;
   const prio = priorityConfig[task.priority] || priorityConfig.medium;
+  const courseHex = courseAccent && courseAccent !== 'primary' && courseAccent !== 'secondary' && courseAccent !== 'tertiary'
+    ? accentHex(courseAccent)
+    : undefined;
 
   return (
     <div
@@ -332,9 +349,13 @@ function TaskCard({
             {task.title}
           </p>
           {task.course_code && (
-            <p className="mt-0.5 font-label-mono-xs text-on-surface-variant/50">
+            <span
+              className="mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-label-mono-xs bg-white/5 text-on-surface-variant/60"
+              style={courseHex ? { backgroundColor: `${courseHex}18`, color: courseHex } : undefined}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-on-surface-variant/50" style={courseHex ? { backgroundColor: courseHex } : undefined} />
               {task.course_code}
-            </p>
+            </span>
           )}
         </div>
         <button

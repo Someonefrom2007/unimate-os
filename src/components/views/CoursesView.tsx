@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   MapPin, Clock, User, BookOpen, Plus, Trash2, AlertTriangle, X,
-  FileText, Target, CheckSquare, StickyNote, Palette,
+  FileText, Target, CheckSquare, StickyNote, Palette, Pencil,
 } from 'lucide-react';
 import { useCourseStore } from '@/core/store/useCourseStore';
 import { useTaskStore } from '@/core/store/useTaskStore';
@@ -33,9 +33,9 @@ const COURSE_PALETTE: { key: AccentColor; label: string; hex: string }[] = [
   { key: AccentColor.Amber,   label: 'Amber',   hex: '#fbbf24' },
   { key: AccentColor.Slate,   label: 'Slate',   hex: '#94a3b8' },
   { key: AccentColor.Violet,  label: 'Violet',  hex: '#a78bfa' },
-  { key: AccentColor.Primary, label: 'Gold',    hex: '#ffc880' },
-  { key: AccentColor.Secondary, label: 'Blue',  hex: '#b4b7ff' },
-  { key: AccentColor.Tertiary,  label: 'Mint',  hex: '#5beaad' },
+  { key: AccentColor.Primary,    label: 'Primary',    hex: '#ffc880' },
+  { key: AccentColor.Secondary,  label: 'Secondary',  hex: '#b4b7ff' },
+  { key: AccentColor.Tertiary,   label: 'Tertiary',   hex: '#5beaad' },
 ];
 
 function AccentColorPicker({
@@ -316,6 +316,7 @@ export function CoursesView() {
   const [confirmDelete, setConfirmDelete] = useState<UiCourse | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [editingCourse, setEditingCourse] = useState<UiCourse | null>(null);
   const [formError, setFormError] = useState('');
   const [selectedCourse, setSelectedCourse] = useState<UiCourse | null>(null);
 
@@ -362,6 +363,22 @@ export function CoursesView() {
     } catch {
       console.error('Failed to update accent');
     }
+  }, [data, upsert]);
+
+  const handleEdit = useCallback(async (course: UiCourse, input: { name: string; professor: string; ects: number; room: string; accent: AccentColor }) => {
+    const domain = data.find((c) => c.id === course.id);
+    if (!domain) return;
+    const updated: DomainCourse = {
+      ...domain,
+      name: input.name.trim(),
+      professor: input.professor.trim(),
+      ects: Math.max(0, input.ects),
+      room: input.room.trim(),
+      accent: input.accent,
+    };
+    await upsert(updated);
+    setEditingCourse(null);
+    setSelectedCourse((sel) => (sel && sel.id === course.id ? { ...sel, name: updated.name, professor: updated.professor, ects: updated.ects, room: updated.room, accent: updated.accent } : sel));
   }, [data, upsert]);
 
   const handleDelete = async (course: UiCourse) => {
@@ -419,6 +436,16 @@ export function CoursesView() {
                 style={{ borderLeft: `3px solid ${hex}` }}
               >
                 {/* Inline recolor button (top-right corner) */}
+                <button
+                  className="absolute right-9 top-3 flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-neutral-900/60 text-on-surface-variant/40 opacity-0 transition-all group-hover:opacity-100 hover:text-on-background hover:border-white/20"
+                  title="Edit course"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingCourse(course);
+                  }}
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
                 <button
                   className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-neutral-900/60 text-on-surface-variant/40 opacity-0 transition-all group-hover:opacity-100 hover:text-on-background hover:border-white/20"
                   title="Change course color"
@@ -496,6 +523,7 @@ export function CoursesView() {
       </div>
       {body}
       {showCreate && <CreateCourseModal onCancel={() => setShowCreate(false)} onConfirm={(input) => void handleCreate(input)} busy={creating} error={formError} />}
+      {editingCourse && <EditCourseModal course={editingCourse} onCancel={() => setEditingCourse(null)} onConfirm={(input) => void handleEdit(editingCourse, input)} />}
       {confirmDelete && <DeleteCourseModal course={confirmDelete} onCancel={() => setConfirmDelete(null)} onConfirm={(c) => void handleDelete(c)} />}
       {selectedCourse && (
         <CourseDetailModal
@@ -506,6 +534,68 @@ export function CoursesView() {
           onRecolor={(color) => { handleRecolor(selectedCourse.id, color); setSelectedCourse({ ...selectedCourse, accent: color }); }}
         />
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Edit Course Modal                                                  */
+/* ------------------------------------------------------------------ */
+
+function EditCourseModal({ course, onCancel, onConfirm }: { course: UiCourse; onCancel: () => void; onConfirm: (input: { name: string; professor: string; ects: number; room: string; accent: AccentColor }) => void }) {
+  const [name, setName] = useState(course.name);
+  const [professor, setProfessor] = useState(course.professor);
+  const [ects, setEcts] = useState(course.ects);
+  const [room, setRoom] = useState(course.room);
+  const [accent, setAccent] = useState<AccentColor>(course.accent as AccentColor);
+  const [localError, setLocalError] = useState('');
+  const hex = accentHex(accent);
+
+  const submit = () => {
+    if (!name.trim()) { setLocalError('Course name is required.'); return; }
+    setLocalError('');
+    onConfirm({ name: name.trim(), professor: professor.trim() || 'TBA', ects: Math.max(0, ects), room: room.trim(), accent });
+  };
+
+  const inputCls = 'w-full rounded-lg border border-white/10 bg-surface-container/60 px-3 py-2.5 font-body-md text-[13px] text-on-background placeholder:text-on-surface-variant/40 focus:border-primary/40 focus:outline-none';
+  const labelCls = 'mb-1.5 block font-label-mono-xs uppercase tracking-wider text-on-surface-variant/50';
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/70 px-4 pt-[10vh] backdrop-blur-sm" onMouseDown={onCancel}>
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-white/10 bg-surface-container-lowest shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3 border-b border-white/8 px-5 py-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: `${hex}15` }}><BookOpen className="h-5 w-5" style={{ color: hex }} /></div>
+          <div className="flex-1">
+            <h3 className="font-headline-md text-[16px] font-semibold text-on-background">Edit Course</h3>
+            <p className="font-label-mono-sm text-[11px] text-on-surface-variant/60">{course.code} · {course.ects} ECTS → updates across Cards, Schedule &amp; Tasks</p>
+          </div>
+          <button onClick={onCancel} className="text-on-surface-variant hover:text-on-background" aria-label="Close"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4">
+          {localError && <p className="rounded-lg border border-error/20 bg-error/10 px-3 py-2 font-body-md text-[13px] text-error">{localError}</p>}
+          <div>
+            <label className={labelCls}>Name</label>
+            <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Advanced Algorithms" />
+          </div>
+          <div>
+            <label className={labelCls}>Professor</label>
+            <input className={inputCls} value={professor} onChange={(e) => setProfessor(e.target.value)} placeholder="Dr. Smith" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className={labelCls}>ECTS</label><input className={inputCls} type="number" value={ects} onChange={(e) => setEcts(Number(e.target.value))} /></div>
+            <div><label className={labelCls}>Room</label><input className={inputCls} value={room} onChange={(e) => setRoom(e.target.value)} placeholder="Turing 301" /></div>
+          </div>
+          <div>
+            <label className={labelCls}>Course Color</label>
+            <AccentColorPicker value={accent} onChange={setAccent} />
+            <p className="mt-2 font-label-mono-xs" style={{ color: hex }}>Preview: <span className="text-on-surface-variant/60">cards, schedule blocks &amp; task tags in Courses, Schedule and Tasks views</span></p>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-3 border-t border-white/8 px-5 py-4">
+          <button onClick={onCancel} className="rounded-lg border border-white/10 bg-white/4 px-4 py-2 font-body-md text-[13px] text-on-surface-variant transition-colors hover:bg-white/8">Cancel</button>
+          <button onClick={submit} className="rounded-lg bg-gradient-to-r from-primary to-primary-container px-4 py-2 font-body-md text-[13px] font-semibold text-surface transition-all hover:scale-[1.02]">Save Changes</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -584,7 +674,7 @@ function DeleteCourseModal({ course, onCancel, onConfirm }: { course: UiCourse; 
   const { data: allExams } = useExamStore();
   const { data: allGrades } = useGradeStore();
   const cascade = predictCourseDeleteCascade(
-    { id: course.id, code: course.code, name: course.name, professor: course.professor, ects: course.ects, room: course.room, semesterId: null, syllabusProgress: course.syllabus_progress, avgGrade: course.avg_grade, gradeLabel: course.grade_label, nextSessionLabel: course.next_session_label, status: CourseStatus.Active, accent: AccentColor.Primary, sortOrder: course.sort_order },
+    { id: course.id, code: course.code, name: course.name, professor: course.professor, ects: course.ects, room: course.room, semesterId: null, syllabusProgress: course.syllabus_progress, avgGrade: course.avg_grade, gradeLabel: course.grade_label, nextSessionLabel: course.next_session_label, status: CourseStatus.Active, accent: course.accent as AccentColor, sortOrder: course.sort_order },
     allTasks, allExams, allGrades,
   );
 

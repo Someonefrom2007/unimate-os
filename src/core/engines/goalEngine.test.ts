@@ -114,7 +114,6 @@ describe('filterGoalsByCategory', () => {
 
 describe('sortGoals', () => {
   it('puts overdue first', () => {
-    const past = new Date('2020-01-01');
     const goals = [
       makeGoal({ id: 'g1', deadlineLabel: 'Dec 31, 2025' }),
       makeGoal({ id: 'g2', deadlineLabel: 'Jan 1, 2020' }),
